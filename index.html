@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Command Broadcast</title>
+<script>
+  (() => {
+    const saved = localStorage.getItem("cb-theme");
+    const param = new URLSearchParams(window.location.search).get("scoutTheme");
+    const theme =
+      param || saved || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    document.documentElement.setAttribute("data-theme", theme);
+  })();
+</script>
+<style>
+:root {
+  color-scheme: light;
+  --cp-bg: #f7f4ef;
+  --cp-bg-elevated: #fcfbf8;
+  --cp-surface: #ffffff;
+  --cp-surface-soft: #f5f5f5;
+  --cp-border: #dedede;
+  --cp-border-strong: #919191;
+  --cp-text: #242424;
+  --cp-text-muted: #5c5c5c;
+  --cp-text-soft: #6f6f6f;
+  --cp-accent: #b11f4b;
+  --cp-accent-hover: #9a1a41;
+  --cp-accent-soft: rgba(177, 31, 75, 0.08);
+  --cp-accent-fg: #ffffff;
+  --cp-success: #16a34a;
+  --cp-danger: #dc2626;
+  --cp-warning: #f59e0b;
+  --cp-link: #0078d4;
+  --cp-shadow: 0 18px 48px rgba(0, 0, 0, 0.12);
+  --cp-overlay: rgba(255, 255, 255, 0.8);
+  --cp-panel: rgba(255, 255, 255, 0.86);
+  --cp-panel-strong: rgba(255, 255, 255, 0.96);
+  --cp-sheen: rgba(255, 255, 255, 0.55);
+  --cp-highlight: rgba(177, 31, 75, 0.12);
+}
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --cp-bg: #3d3b3a;
+  --cp-bg-elevated: #343231;
+  --cp-surface: #292929;
+  --cp-surface-soft: #2e2e2e;
+  --cp-border: #474747;
+  --cp-border-strong: #5f5f5f;
+  --cp-text: #dedede;
+  --cp-text-muted: #919191;
+  --cp-text-soft: #b0b0b0;
+  --cp-accent: #fd8ea1;
+  --cp-accent-hover: #fb7b91;
+  --cp-accent-soft: rgba(253, 142, 161, 0.14);
+  --cp-accent-fg: #1a1a1a;
+  --cp-success: #4ade80;
+  --cp-danger: #f87171;
+  --cp-warning: #fbbf24;
+  --cp-link: #4da6ff;
+  --cp-shadow: 0 18px 48px rgba(0, 0, 0, 0.32);
+  --cp-overlay: rgba(41, 41, 41, 0.88);
+  --cp-panel: rgba(41, 41, 41, 0.72);
+  --cp-panel-strong: rgba(41, 41, 41, 0.96);
+  --cp-sheen: rgba(255, 255, 255, 0.04);
+  --cp-highlight: rgba(253, 142, 161, 0.12);
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--cp-bg);
+  color: var(--cp-text);
+  font-family: "Segoe UI", Aptos, Calibri, -apple-system, BlinkMacSystemFont, sans-serif;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ---------- Display ---------- */
+#stage {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 16px;
+  display: flex;
+}
+#display {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  background: var(--cp-surface);
+  border: 1px solid var(--cp-border);
+  border-radius: 16px;
+  box-shadow: 0 0 2px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.14);
+  overflow: hidden;
+  transition: transform 0.25s ease;
+}
+body.flipped #display { transform: rotate(180deg); }
+#label {
+  position: absolute;
+  top: 12px; left: 20px; right: 20px;
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--cp-text-muted);
+  pointer-events: none;
+}
+#label .step { color: var(--cp-accent); }
+#fitbox {
+  position: absolute;
+  inset: 56px 28px 24px 28px;
+  display: flex;
+  align-items: center;
+}
+#output {
+  margin: 0;
+  width: 100%;
+  font-family: Consolas, "Courier New", Courier, monospace;
+  line-height: 1.25;
+  color: var(--cp-text);
+  white-space: pre;
+}
+body.wrap #output { white-space: pre-wrap; overflow-wrap: anywhere; }
+#output .ln { display: block; }
+#output .ln::before {
+  content: "$ ";
+  color: var(--cp-accent);
+  font-weight: 700;
+}
+#output .ln.cont::before { content: "  "; }
+#output .ln.comment { color: var(--cp-text-muted); font-style: italic; }
+#output .ln.comment::before { content: ""; }
+#output .placeholder { color: var(--cp-text-soft); font-style: italic; }
+body.no-prompt #output .ln::before { content: ""; }
+
+/* ---------- Composer ---------- */
+#composer {
+  flex: 0 0 auto;
+  background: var(--cp-bg-elevated);
+  border-top: 1px solid var(--cp-border);
+  padding: 12px 16px 16px;
+}
+body.presenting #composer { display: none; }
+#toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+#toolbar .spacer { flex: 1; }
+button, .toggle {
+  font: inherit;
+  font-size: 13px;
+  background: var(--cp-surface);
+  color: var(--cp-text);
+  border: 1px solid var(--cp-border);
+  border-radius: 0.625rem;
+  padding: 6px 12px;
+  cursor: pointer;
+  user-select: none;
+}
+button:hover, .toggle:hover { border-color: var(--cp-border-strong); }
+button.primary {
+  background: var(--cp-accent);
+  color: var(--cp-accent-fg);
+  border-color: var(--cp-accent);
+  font-weight: 600;
+}
+button.primary:hover { background: var(--cp-accent-hover); }
+.toggle { display: inline-flex; align-items: center; gap: 6px; }
+.toggle input { accent-color: var(--cp-accent); margin: 0; }
+.hint { font-size: 12px; color: var(--cp-text-muted); }
+#editState { color: var(--cp-accent); font-weight: 600; }
+#editState:not(:empty)::after { content: " · "; color: var(--cp-text-muted); font-weight: 400; }
+#input {
+  width: 100%;
+  height: 120px;
+  resize: vertical;
+  font-family: Consolas, "Courier New", Courier, monospace;
+  font-size: 16px;
+  background: var(--cp-surface);
+  color: var(--cp-text);
+  border: 1px solid var(--cp-border);
+  border-radius: 0.625rem;
+  padding: 10px 12px;
+  outline: none;
+}
+#input:focus { border-color: var(--cp-accent); box-shadow: 0 0 0 3px var(--cp-accent-soft); }
+#histInfo { font-size: 12px; color: var(--cp-text-muted); min-width: 70px; text-align: center; }
+#toast {
+  position: fixed;
+  top: 24px; left: 50%;
+  transform: translateX(-50%);
+  background: var(--cp-panel-strong);
+  color: var(--cp-text);
+  border: 1px solid var(--cp-border);
+  border-radius: 0.625rem;
+  padding: 8px 16px;
+  font-size: 14px;
+  opacity: 0;
+  transition: opacity 0.2s;
+  pointer-events: none;
+  z-index: 10;
+}
+#toast.show { opacity: 1; }
+#exitHint {
+  display: none;
+  position: fixed; bottom: 8px; right: 12px;
+  font-size: 11px; color: var(--cp-text-soft);
+}
+body.presenting #exitHint { display: block; }
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <div id="display">
+    <div id="label"><span id="title">Type this:</span><span class="step" id="stepNo"></span></div>
+    <div id="fitbox"><pre id="output"></pre></div>
+  </div>
+</div>
+
+<div id="composer">
+  <div id="toolbar">
+    <button class="primary" id="btnShow" title="Ctrl+Enter">Show ▶</button>
+    <button id="btnPrev" title="Alt+↑">◀ Prev</button>
+    <span id="histInfo">—</span>
+    <button id="btnNext" title="Alt+↓">Next ▶</button>
+    <button id="btnClear" title="Esc">Clear</button>
+    <button id="btnCopy">Copy</button>
+    <label class="toggle" title="Mirror as you type"><input type="checkbox" id="optLive"> Live</label>
+    <label class="toggle"><input type="checkbox" id="optPrompt" checked> $ prompt</label>
+    <label class="toggle"><input type="checkbox" id="optWrap"> Wrap</label>
+    <label class="toggle"><input type="checkbox" id="optFlip"> Flip 180°</label>
+    <span class="spacer"></span>
+    <button id="btnTheme">Theme</button>
+    <button id="btnPresent" title="F2">Hide input (F2)</button>
+    <button id="btnFull" title="F11">Fullscreen</button>
+  </div>
+  <textarea id="input" spellcheck="false" autocomplete="off"
+    placeholder="Type a command (multi-line OK). Ctrl+Enter to show it big. Lines starting with # appear as comments."></textarea>
+  <div class="hint"><span id="editState"></span>Ctrl+Enter show · Alt+↑/↓ history (loads into editor) · Esc new command · F2 hide/show input · Ctrl+Shift+F flip display · Ctrl+Delete clear history</div>
+</div>
+
+<div id="toast"></div>
+<div id="exitHint">F2 to show input</div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const input = $("input"), output = $("output"), fitbox = $("fitbox");
+  const MAX_FONT = 160, MIN_FONT = 12;
+
+  let history = JSON.parse(localStorage.getItem("cb-history") || "[]");
+  let idx = history.length - 1;
+  let editIdx = -1;
+  let current = history[idx] || "";
+
+  const opts = ["Live", "Prompt", "Wrap", "Flip"];
+  const saved = JSON.parse(localStorage.getItem("cb-opts") || "{}");
+  opts.forEach((o) => { if (o in saved) $("opt" + o).checked = saved[o]; });
+
+  function applyOpts() {
+    document.body.classList.toggle("no-prompt", !$("optPrompt").checked);
+    document.body.classList.toggle("wrap", $("optWrap").checked);
+    document.body.classList.toggle("flipped", $("optFlip").checked);
+    const o = {}; opts.forEach((k) => (o[k] = $("opt" + k).checked));
+    localStorage.setItem("cb-opts", JSON.stringify(o));
+    fit();
+  }
+
+  function render(text) {
+    output.textContent = "";
+    if (!text.trim()) {
+      const p = document.createElement("span");
+      p.className = "placeholder";
+      p.textContent = "Waiting for the next command…";
+      output.appendChild(p);
+    } else {
+      let prevContinues = false;
+      text.replace(/\s+$/, "").split("\n").forEach((line) => {
+        const span = document.createElement("span");
+        span.className = "ln";
+        if (/^\s*#/.test(line)) span.classList.add("comment");
+        else if (prevContinues) span.classList.add("cont");
+        span.textContent = line || " ";
+        output.appendChild(span);
+        prevContinues = /[\\`^|]\s*$|&&\s*$/.test(line);
+      });
+    }
+    updateStep();
+    fit();
+  }
+
+  function fit() {
+    const w = fitbox.clientWidth, h = fitbox.clientHeight;
+    let lo = MIN_FONT, hi = MAX_FONT;
+    while (lo < hi) {
+      const mid = Math.ceil((lo + hi) / 2);
+      output.style.fontSize = mid + "px";
+      if (output.scrollWidth <= w && output.scrollHeight <= h) lo = mid;
+      else hi = mid - 1;
+    }
+    output.style.fontSize = lo + "px";
+    fitbox.style.overflow = lo === MIN_FONT ? "auto" : "hidden";
+  }
+
+  function updateStep() {
+    const shown = history.length && idx >= 0;
+    $("stepNo").textContent = shown && !$("optLive").checked ? `Step ${idx + 1}` : "";
+    $("histInfo").textContent = history.length ? `${idx + 1} / ${history.length}` : "—";
+  }
+
+  function save() { localStorage.setItem("cb-history", JSON.stringify(history.slice(-200))); }
+
+  function show() {
+    const text = input.value.replace(/\s+$/, "");
+    if (!text) return;
+    let msg = "Shown";
+    if (editIdx >= 0 && editIdx < history.length) {
+      if (history[editIdx] !== text) msg = `Step ${editIdx + 1} updated`;
+      history[editIdx] = text;
+      idx = editIdx;
+    } else {
+      if (history[history.length - 1] !== text) history.push(text);
+      idx = history.length - 1;
+    }
+    save();
+    current = text;
+    render(current);
+    setEdit(-1);
+    input.value = "";
+    toast(msg);
+  }
+
+  function setEdit(i) {
+    editIdx = i;
+    $("editState").textContent = i >= 0 ? `Editing step ${i + 1} (Ctrl+Enter updates it, Esc = new command)` : "";
+  }
+
+  function go(delta) {
+    if (!history.length) return;
+    idx = Math.max(0, Math.min(history.length - 1, idx + delta));
+    current = history[idx];
+    input.value = current;
+    input.setSelectionRange(input.value.length, input.value.length);
+    setEdit(idx);
+    render(current);
+  }
+
+  let tt;
+  function toast(msg) {
+    const t = $("toast"); t.textContent = msg; t.classList.add("show");
+    clearTimeout(tt); tt = setTimeout(() => t.classList.remove("show"), 1000);
+  }
+
+  function togglePresent() {
+    document.body.classList.toggle("presenting");
+    requestAnimationFrame(fit);
+    if (!document.body.classList.contains("presenting")) input.focus();
+  }
+
+  input.addEventListener("input", () => { if ($("optLive").checked) render(input.value); });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); show(); }
+    else if (e.key === "Escape") { input.value = ""; setEdit(-1); if ($("optLive").checked) render(current); }
+    else if (e.key === "Tab") {
+      e.preventDefault();
+      const s = input.selectionStart;
+      input.setRangeText("  ", s, input.selectionEnd, "end");
+    }
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "F2") { e.preventDefault(); togglePresent(); }
+    else if (e.altKey && e.key === "ArrowUp") { e.preventDefault(); go(-1); }
+    else if (e.altKey && e.key === "ArrowDown") { e.preventDefault(); go(1); }
+    else if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "f") {
+      e.preventDefault(); $("optFlip").checked = !$("optFlip").checked; applyOpts();
+    }
+    else if (e.ctrlKey && e.key === "Delete") {
+      if (confirm("Clear command history?")) {
+        history = []; idx = -1; current = ""; setEdit(-1); input.value = ""; save(); render("");
+      }
+    }
+    else if (document.body.classList.contains("presenting")) {
+      if (e.key === "ArrowLeft" || e.key === "PageUp") go(-1);
+      if (e.key === "ArrowRight" || e.key === "PageDown" || e.key === " ") go(1);
+    }
+  });
+
+  $("btnShow").onclick = () => { show(); input.focus(); };
+  $("btnPrev").onclick = () => go(-1);
+  $("btnNext").onclick = () => go(1);
+  $("btnClear").onclick = () => { current = ""; idx = history.length - 1; render(""); $("stepNo").textContent = ""; input.value = ""; setEdit(-1); input.focus(); };
+  $("btnCopy").onclick = async () => {
+    try { await navigator.clipboard.writeText(current); toast("Copied"); } catch { toast("Copy failed"); }
+  };
+  $("btnTheme").onclick = () => {
+    const next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", next);
+    localStorage.setItem("cb-theme", next);
+  };
+  $("btnPresent").onclick = togglePresent;
+  $("btnFull").onclick = () => {
+    if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen();
+  };
+  opts.forEach((o) => $("opt" + o).addEventListener("change", () => {
+    applyOpts();
+    if (o === "Live") render($("optLive").checked && input.value ? input.value : current);
+  }));
+
+  new ResizeObserver(fit).observe(fitbox);
+  applyOpts();
+  render(current);
+  input.focus();
+})();
+</script>
+</body>
+</html>
